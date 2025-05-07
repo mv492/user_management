@@ -296,3 +296,41 @@ async def test_registration_rejects_password_without_letter(async_client, email_
     errs = resp.json()["detail"]
     assert any(e["loc"][-1] == "password" for e in errs)
     assert any("must contain at least one letter" in e["msg"] for e in errs)
+
+@pytest.mark.asyncio
+async def test_create_user_duplicate_email_returns_400(async_client, admin_token, verified_user):
+    """
+    POST /users/ (admin) should reject a duplicate email with 400.
+    """
+    payload = {
+        "nickname": "new_nick",
+        "email": verified_user.email,     # already in DB
+        "password": "ValidPass123!",
+        "role": "AUTHENTICATED"
+    }
+    resp = await async_client.post(
+        "/users/",
+        json=payload,
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Email already exists"
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_email_returns_400(async_client, verified_user):
+    """
+    POST /register/ should also reject duplicate email with 400.
+    """
+    payload = {
+        "nickname": "another_nick",
+        "email": verified_user.email,     # already in DB
+        "password": "ValidPass123!",
+        "role": "AUTHENTICATED"
+    }
+    resp = await async_client.post(
+        "/register/",
+        json=payload
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Email already exists"
