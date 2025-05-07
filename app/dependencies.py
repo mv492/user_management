@@ -9,6 +9,7 @@ from app.services.jwt_service import decode_token
 from settings.config import Settings
 from fastapi import Depends
 
+
 def get_settings() -> Settings:
     """Return application settings."""
     return Settings()

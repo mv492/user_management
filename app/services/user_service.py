@@ -56,7 +56,12 @@ class UserService:
             existing_user = await cls.get_by_email(session, validated_data['email'])
             if existing_user:
                 logger.error("User with given email already exists.")
-                return None
+                from fastapi import HTTPException, status
+               # Raise 400 instead of returning None
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already exists"
+                )
             validated_data['hashed_password'] = hash_password(validated_data.pop('password'))
             new_user = User(**validated_data)
             new_nickname = generate_nickname()
@@ -163,6 +168,23 @@ class UserService:
             await session.commit()
             return True
         return False
+    @classmethod
+    async def create_password_reset(cls, session: AsyncSession, email: str) -> str:
+        # generate & store a one‑hour token
+        from fastapi import HTTPException, status
+        from datetime import datetime, timedelta
+        from app.models.user_model import PasswordResetToken
+
+        user = await cls.get_by_email(session, email)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such user")
+
+        token = secrets.token_urlsafe(32)
+        expires = datetime.utcnow() + timedelta(hours=1)
+        pr = PasswordResetToken(token=token, user_id=user.id, expires_at=expires)
+        session.add(pr)
+        await session.commit()
+        return token
 
     @classmethod
     async def verify_email_with_token(cls, session: AsyncSession, user_id: UUID, token: str) -> bool:
@@ -199,3 +221,17 @@ class UserService:
             await session.commit()
             return True
         return False
+    
+    @classmethod
+    async def set_professional_status(
+        cls, session: AsyncSession, user_id: UUID, status: bool
+    ) -> Optional[User]:
+        from datetime import datetime
+        user = await cls.get_by_id(session, user_id)
+        if not user:
+            return None
+        user.is_professional = status
+        user.professional_status_updated_at = datetime.utcnow()
+        session.add(user)
+        await session.commit()
+        return user

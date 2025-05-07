@@ -8,7 +8,21 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID, ENUM
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.database import Base
+from sqlalchemy import ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
+from datetime import datetime
 
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+    token = Column(String, primary_key=True, index=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at = Column(DateTime(timezone=False), default=datetime.utcnow)
+    expires_at = Column(DateTime(timezone=False), nullable=False)
 class UserRole(Enum):
     """Enumeration of user roles within the application, stored as ENUM in the database."""
     ANONYMOUS = "ANONYMOUS"

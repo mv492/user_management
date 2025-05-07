@@ -7,6 +7,7 @@ import uuid
 import re
 from app.models.user_model import UserRole
 from app.utils.nickname_gen import generate_nickname
+from typing import Literal
 
 
 def validate_url(url: Optional[str]) -> Optional[str]:
@@ -35,7 +36,26 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     email: EmailStr = Field(..., example="john.doe@example.com")
-    password: str = Field(..., example="Secure*1234")
+    password: str = Field(
+        ...,
+        min_length=8,
+        example="SecurePass123",
+        description="At least 8 characters, with at least one letter and one number"
+    )
+
+    @validator("password")
+    def password_must_be_strong(cls, v: str) -> str:
+        if not any(c.isalpha() for c in v):
+            raise ValueError("Password must contain at least one letter")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+        return v
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
 
 class UserUpdate(UserBase):
     email: Optional[EmailStr] = Field(None, example="john.doe@example.com")
@@ -46,7 +66,11 @@ class UserUpdate(UserBase):
     profile_picture_url: Optional[str] = Field(None, example="https://example.com/profiles/john.jpg")
     linkedin_profile_url: Optional[str] =Field(None, example="https://linkedin.com/in/johndoe")
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
-    role: Optional[str] = Field(None, example="AUTHENTICATED")
+    role: Optional[UserRole] = Field(
+        None,
+        example=UserRole.AUTHENTICATED.value,
+        description="Must be one of: " + ", ".join([r.value for r in UserRole])
+     )
 
     @root_validator(pre=True)
     def check_at_least_one_value(cls, values):
@@ -81,3 +105,15 @@ class UserListResponse(BaseModel):
     total: int = Field(..., example=100)
     page: int = Field(..., example=1)
     size: int = Field(..., example=10)
+
+class UserProfileUpdate(BaseModel):
+    first_name:  Optional[str] = None
+    last_name:   Optional[str] = None
+    bio:         Optional[str] = None
+    profile_picture_url: Optional[str] = None
+    linkedin_profile_url: Optional[str] = None
+    github_profile_url:   Optional[str] = None
+
+# For managers/admins toggling professional status
+class ProfessionalStatusUpdate(BaseModel):
+    is_professional: bool
