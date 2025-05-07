@@ -46,7 +46,11 @@ class UserUpdate(UserBase):
     profile_picture_url: Optional[str] = Field(None, example="https://example.com/profiles/john.jpg")
     linkedin_profile_url: Optional[str] =Field(None, example="https://linkedin.com/in/johndoe")
     github_profile_url: Optional[str] = Field(None, example="https://github.com/johndoe")
-    role: Optional[str] = Field(None, example="AUTHENTICATED")
+    role: Optional[UserRole] = Field(
+        None,
+        example=UserRole.AUTHENTICATED.value,
+        description="Must be one of: " + ", ".join([r.value for r in UserRole])
+     )
 
     @root_validator(pre=True)
     def check_at_least_one_value(cls, values):
