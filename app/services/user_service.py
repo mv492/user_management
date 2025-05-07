@@ -221,3 +221,17 @@ class UserService:
             await session.commit()
             return True
         return False
+    
+    @classmethod
+    async def set_professional_status(
+        cls, session: AsyncSession, user_id: UUID, status: bool
+    ) -> Optional[User]:
+        from datetime import datetime
+        user = await cls.get_by_id(session, user_id)
+        if not user:
+            return None
+        user.is_professional = status
+        user.professional_status_updated_at = datetime.utcnow()
+        session.add(user)
+        await session.commit()
+        return user

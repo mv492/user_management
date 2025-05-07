@@ -7,6 +7,7 @@ import uuid
 import re
 from app.models.user_model import UserRole
 from app.utils.nickname_gen import generate_nickname
+from typing import Literal
 
 
 def validate_url(url: Optional[str]) -> Optional[str]:
@@ -104,3 +105,15 @@ class UserListResponse(BaseModel):
     total: int = Field(..., example=100)
     page: int = Field(..., example=1)
     size: int = Field(..., example=10)
+
+class UserProfileUpdate(BaseModel):
+    first_name:  Optional[str] = None
+    last_name:   Optional[str] = None
+    bio:         Optional[str] = None
+    profile_picture_url: Optional[str] = None
+    linkedin_profile_url: Optional[str] = None
+    github_profile_url:   Optional[str] = None
+
+# For managers/admins toggling professional status
+class ProfessionalStatusUpdate(BaseModel):
+    is_professional: bool
