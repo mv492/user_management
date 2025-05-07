@@ -227,7 +227,7 @@ async def test_create_user_with_invalid_role_returns_422(async_client, email_ser
     assert resp.status_code == 422
     # Check that the error mentions 'role'
     assert any(err["loc"][-1] == "role" for err in resp.json()["detail"])   
-
+    
 @pytest.mark.asyncio
 async def test_update_user_with_invalid_role_returns_422(async_client, admin_token, user):
     """
@@ -242,3 +242,57 @@ async def test_update_user_with_invalid_role_returns_422(async_client, admin_tok
     assert resp.status_code == 422
     # again, ensure the failure is on the 'role' field
     assert any(err["loc"][-1] == "role" for err in resp.json()["detail"])
+
+@pytest.mark.asyncio
+async def test_registration_rejects_too_short_password(async_client, email_service):
+    payload = {
+        "nickname": "shortpw",
+        "email": "shortpw@example.com",
+        "password": "Ab1",             # too short
+        "role": "AUTHENTICATED"
+    }
+    resp = await async_client.post(
+        "/register/",
+        json=payload
+    )
+    assert resp.status_code == 422
+    # ensure error is about password length
+    errs = resp.json()["detail"]
+    assert any(e["loc"][-1] == "password" for e in errs)
+    assert any("at least 8" in e["msg"] for e in errs), f"Password length error not found in: {errs}"
+
+
+@pytest.mark.asyncio
+async def test_registration_rejects_password_without_digit(async_client, email_service):
+    payload = {
+        "nickname": "nodigitpw",
+        "email": "nodigit@example.com",
+        "password": "NoDigitsHere!",   # letters but no digit
+        "role": "AUTHENTICATED"
+    }
+    resp = await async_client.post(
+        "/register/",
+        json=payload
+    )
+    assert resp.status_code == 422
+    errs = resp.json()["detail"]
+    assert any(e["loc"][-1] == "password" for e in errs)
+    assert any("must contain at least one digit" in e["msg"] for e in errs)
+
+
+@pytest.mark.asyncio
+async def test_registration_rejects_password_without_letter(async_client, email_service):
+    payload = {
+        "nickname": "noletterpw",
+        "email": "noletter@example.com",
+        "password": "12345678",        # digits only
+        "role": "AUTHENTICATED"
+    }
+    resp = await async_client.post(
+        "/register/",
+        json=payload
+    )
+    assert resp.status_code == 422
+    errs = resp.json()["detail"]
+    assert any(e["loc"][-1] == "password" for e in errs)
+    assert any("must contain at least one letter" in e["msg"] for e in errs)
