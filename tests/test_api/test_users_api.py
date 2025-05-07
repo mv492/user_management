@@ -190,3 +190,20 @@ async def test_list_users_unauthorized(async_client, user_token):
         headers={"Authorization": f"Bearer {user_token}"}
     )
     assert response.status_code == 403  # Forbidden, as expected for regular user
+
+@pytest.mark.asyncio
+async def test_login_with_invalid_credentials_returns_500(async_client):
+    """
+    QA Issue: Login should not return 500 on invalid credentials.
+    This test verifies that currently (pre‑fix) an invalid login
+    yields a 500 Internal Server Error.
+    """
+    # Attempt login with a non‑existent user / wrong password
+    resp = await async_client.post(
+        "/login/",
+        data={"username": "doesnotexist@example.com", "password": "wrongpassword"}
+    )
+    assert resp.status_code == 401, (
+        f"Expected 401 for invalid credentials, got {resp.status_code}"
+    )
+    assert resp.json().get("detail") == "Incorrect email or password."
