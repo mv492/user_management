@@ -192,7 +192,7 @@ async def list_users(
     )
 
 
-@router.post("/register/", response_model=UserResponse, tags=["Login and Registration"])
+@router.post("/register/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, tags=["Login and Registration"])
 async def register(user_data: UserCreate, session: AsyncSession = Depends(get_db), email_service: EmailService = Depends(get_email_service)):
     user = await UserService.register_user(session, user_data.model_dump(), email_service)
     if user:

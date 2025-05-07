@@ -334,3 +334,20 @@ async def test_register_duplicate_email_returns_400(async_client, verified_user)
     )
     assert resp.status_code == 400
     assert resp.json()["detail"] == "Email already exists"
+
+@pytest.mark.asyncio
+async def test_register_returns_201_created(async_client, email_service):
+    """
+    POST /register/ should return 201 Created on successful registration.
+    """
+    payload = {
+        "nickname": "newuser",
+        "email": "newuser@example.com",
+        "password": "StrongPass123!",
+        "role": "AUTHENTICATED"
+    }
+    resp = await async_client.post("/register/", json=payload)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}"
+    body = resp.json()
+    assert body["email"] == payload["email"]
+    assert "id" in body
