@@ -207,3 +207,38 @@ async def test_login_with_invalid_credentials_returns_500(async_client):
         f"Expected 401 for invalid credentials, got {resp.status_code}"
     )
     assert resp.json().get("detail") == "Incorrect email or password."
+
+@pytest.mark.asyncio
+async def test_create_user_with_invalid_role_returns_422(async_client, email_service, admin_token):
+    """
+    POST /users/ should 422 if role isn't one of the UserRole values.
+    """
+    payload = {
+        "nickname": "testnick",
+        "email": "rolefail@example.com",
+        "password": "ValidPass123!",
+        "role": "SUPERUSER"   # not in UserRole
+    }
+    resp = await async_client.post(
+        "/users/",
+        json=payload,
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert resp.status_code == 422
+    # Check that the error mentions 'role'
+    assert any(err["loc"][-1] == "role" for err in resp.json()["detail"])   
+
+@pytest.mark.asyncio
+async def test_update_user_with_invalid_role_returns_422(async_client, admin_token, user):
+    """
+    PUT /users/{id} should 422 on bad role.
+    """
+    payload = {"role": "POWERUSER"}  # invalid
+    resp = await async_client.put(
+        f"/users/{user.id}",
+        json=payload,
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert resp.status_code == 422
+    # again, ensure the failure is on the 'role' field
+    assert any(err["loc"][-1] == "role" for err in resp.json()["detail"])
