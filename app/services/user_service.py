@@ -168,6 +168,23 @@ class UserService:
             await session.commit()
             return True
         return False
+    @classmethod
+    async def create_password_reset(cls, session: AsyncSession, email: str) -> str:
+        # generate & store a one‑hour token
+        from fastapi import HTTPException, status
+        from datetime import datetime, timedelta
+        from app.models.user_model import PasswordResetToken
+
+        user = await cls.get_by_email(session, email)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such user")
+
+        token = secrets.token_urlsafe(32)
+        expires = datetime.utcnow() + timedelta(hours=1)
+        pr = PasswordResetToken(token=token, user_id=user.id, expires_at=expires)
+        session.add(pr)
+        await session.commit()
+        return token
 
     @classmethod
     async def verify_email_with_token(cls, session: AsyncSession, user_id: UUID, token: str) -> bool:

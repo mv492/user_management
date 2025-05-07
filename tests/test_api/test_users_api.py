@@ -6,6 +6,11 @@ from app.models.user_model import User, UserRole
 from app.utils.nickname_gen import generate_nickname
 from app.utils.security import hash_password
 from app.services.jwt_service import decode_token  # Import your FastAPI app
+from app.models.user_model import PasswordResetToken
+from app.services.user_service import UserService
+from app.dependencies import get_email_service
+from datetime import datetime, timedelta
+from sqlalchemy import select
 
 # Example of a test function using the async_client fixture
 @pytest.mark.asyncio
@@ -351,3 +356,104 @@ async def test_register_returns_201_created(async_client, email_service):
     body = resp.json()
     assert body["email"] == payload["email"]
     assert "id" in body
+
+@pytest.mark.asyncio
+async def test_password_reset_request_nonexistent_email(async_client):
+    """
+    POST /users/password-reset with an email not in the system should return 404.
+    """
+    resp = await async_client.post("/users/password-reset", json={"email": "noone@example.com"})
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "No such user"
+
+@pytest.mark.asyncio
+async def test_password_reset_request_success(async_client, db_session, verified_user, email_service):
+    """
+    POST /users/password-reset with a valid email should return 200
+    and create a PasswordResetToken in the database.
+    """
+    # override the email service so send_user_email() is a no-op
+    async_client.app.dependency_overrides[get_email_service] = lambda: email_service
+
+    resp = await async_client.post(
+        "/users/password-reset",
+        json={"email": verified_user.email}
+    )
+    assert resp.status_code == 200
+
+    # inspect the DB for a new reset token
+    result = await db_session.execute(
+        select(PasswordResetToken).filter_by(user_id=verified_user.id)
+    )
+    pr = result.scalars().first()
+    assert pr is not None
+    assert pr.expires_at > datetime.utcnow()
+
+    async_client.app.dependency_overrides.clear()
+
+@pytest.mark.asyncio
+async def test_reset_link_validation_invalid_token(async_client):
+    """
+    GET /users/password-reset/verify?token=bad should return 400.
+    """
+    resp = await async_client.get("/users/password-reset/verify", params={"token": "badtoken"})
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid token"
+
+@pytest.mark.asyncio
+async def test_reset_link_validation_expired_token(async_client, db_session, verified_user):
+    """
+    GET /users/password-reset/verify?token=expired should return 410.
+    """
+    # insert an already-expired token
+    expired = PasswordResetToken(
+        token="expiredtoken",
+        user_id=verified_user.id,
+        created_at=datetime.utcnow() - timedelta(days=2),
+        expires_at=datetime.utcnow() - timedelta(days=1),
+    )
+    db_session.add(expired)
+    await db_session.commit()
+
+    resp = await async_client.get("/users/password-reset/verify", params={"token": "expiredtoken"})
+    assert resp.status_code == 410
+    assert resp.json()["detail"] == "Token expired"
+
+@pytest.mark.asyncio
+async def test_password_update_success_and_login(async_client, db_session, verified_user):
+    """
+    POST /users/password-reset/confirm with a valid token and new strong password → 200,
+    and then logging in with the new password succeeds.
+    """
+    # generate a valid reset token
+    token = await UserService.create_password_reset(db_session, verified_user.email)
+    new_pw = "NewStrongPass123!"
+
+    resp = await async_client.post(
+        "/users/password-reset/confirm",
+        json={"token": token, "new_password": new_pw}
+    )
+    assert resp.status_code == 200
+
+    # now try logging in with the new password
+    login = await async_client.post(
+        "/login/",
+        data={"username": verified_user.email, "password": new_pw}
+    )
+    assert login.status_code == 200
+    assert "access_token" in login.json()
+
+@pytest.mark.asyncio
+async def test_password_update_enforces_complexity(async_client, db_session, verified_user):
+    """
+    POST /users/password-reset/confirm with too-short new password → 422.
+    """
+    token = await UserService.create_password_reset(db_session, verified_user.email)
+    resp = await async_client.post(
+        "/users/password-reset/confirm",
+        json={"token": token, "new_password": "short"}
+    )
+    assert resp.status_code == 422
+    # Detail comes back as a plain string
+    detail = resp.json()["detail"]
+    assert detail == "Password must be at least 8 characters"
