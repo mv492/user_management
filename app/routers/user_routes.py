@@ -19,9 +19,9 @@ Key Highlights:
 """
 
 from builtins import dict, int, len, str
-from datetime import timedelta
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status, Request
+from datetime import datetime
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db, get_email_service, require_role
@@ -33,6 +33,11 @@ from app.services.jwt_service import create_access_token
 from app.utils.link_generation import create_user_links, generate_pagination_links
 from app.dependencies import get_settings
 from app.services.email_service import EmailService
+from fastapi import BackgroundTasks
+from app.schemas.user_schemas import PasswordResetRequest, PasswordResetConfirm  # you'll need to define these
+from app.services.user_service import UserService
+from datetime import datetime
+from datetime import timedelta
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 settings = get_settings()
@@ -192,7 +197,14 @@ async def list_users(
     )
 
 
-@router.post("/register/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, tags=["Login and Registration"])
+from fastapi import status
+
+@router.post(
+    "/register/",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Login and Registration"],
+)
 async def register(user_data: UserCreate, session: AsyncSession = Depends(get_db), email_service: EmailService = Depends(get_email_service)):
     user = await UserService.register_user(session, user_data.model_dump(), email_service)
     if user:
@@ -246,3 +258,54 @@ async def verify_email(user_id: UUID, token: str, db: AsyncSession = Depends(get
         return {"message": "Email verified successfully"}
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification token")
 
+@router.post("/users/password-reset")
+async def password_reset_request(
+    body: PasswordResetRequest,
+    background: BackgroundTasks,
+    session: AsyncSession = Depends(get_db),
+    email_service: EmailService = Depends(get_email_service),
+):
+    token = await UserService.create_password_reset(session, body.email)
+    # enqueue the email send so tests don’t hang
+    background.add_task(email_service.send_user_email, {"email": body.email, "token": token}, "password_reset")
+    return {"msg": "Password reset email sent"}
+
+@router.get("/users/password-reset/verify")
+async def password_reset_verify(token: str, session: AsyncSession = Depends(get_db)):
+    from fastapi import HTTPException, status
+    from app.models.user_model import PasswordResetToken
+
+    pr = await session.get(PasswordResetToken, token)
+    if not pr:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
+    if pr.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Token expired")
+    return {"msg": "Token is valid"}
+
+@router.post("/users/password-reset/confirm")
+async def password_reset_confirm(
+    body: PasswordResetConfirm,
+    session: AsyncSession = Depends(get_db),
+):
+    from fastapi import HTTPException, status
+    from app.models.user_model import PasswordResetToken
+
+    # 1) Find the reset‑token record
+    pr = await session.get(PasswordResetToken, body.token)
+    if not pr:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Invalid token")
+
+    # 2) Check expiration
+    if pr.expires_at < datetime.utcnow():
+        raise HTTPException(status.HTTP_410_GONE, detail="Token expired")
+
+    # 3) Enforce complexity
+    if len(body.new_password) < 8:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Password must be at least 8 characters"
+        )
+
+    # 4) Reset the password
+    await UserService.reset_password(session, pr.user_id, body.new_password)
+    return {"msg": "Password updated"}

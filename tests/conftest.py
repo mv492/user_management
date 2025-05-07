@@ -58,6 +58,8 @@ def email_service():
 @pytest.fixture(scope="function")
 async def async_client(db_session):
     async with AsyncClient(app=app, base_url="http://testserver") as client:
+        # expose the FastAPI app so tests can do client.app.dependency_overrides
+        client.app = app
         app.dependency_overrides[get_db] = lambda: db_session
         try:
             yield client
